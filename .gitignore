@@ -3,4 +3,4 @@ __pycache__/
 *.pyc
 .env
 data/cache/
-sec_ticker.json
+sec_ticker.json.DS_Store

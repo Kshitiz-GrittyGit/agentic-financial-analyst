@@ -1,0 +1,8 @@
+
+regex==2026.3.32
+requests==2.32.5
+anthropic
+python-dotenv
+functools
+datetime
+pathlib
