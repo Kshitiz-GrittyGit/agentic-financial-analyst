@@ -2,5 +2,9 @@
 __pycache__/
 *.pyc
 .env
-data/cache/
-sec_ticker.json.DS_Store
+.DS_Store
+data/
+documents/
+output/
+sec_ticker.json
+sla_registry.json
