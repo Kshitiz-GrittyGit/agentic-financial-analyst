@@ -8,3 +8,5 @@ documents/
 output/
 sec_ticker.json
 sla_registry.json
+qdrant_storage/
+*.pdf
