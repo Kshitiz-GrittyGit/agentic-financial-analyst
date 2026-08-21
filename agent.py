@@ -6,6 +6,7 @@ from anthropic import Anthropic
 from helpers import get_financial_fact, PeriodError
 import json
 import time
+from search import search_filings
 load_dotenv()  # reads .env into os.environ
 
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -23,7 +24,9 @@ tools_schema = [
     },
     {
         "name": "get_financial_fact",
-        "description": "Returns the specific financial fact for a company. takes company, metric and period as arguments ",
+        "description": """Returns one exact financial figure from SEC XBRL data, with full source lineage. 
+        Use for ALL numeric values (revenue, R&D expense, net income). 
+        One call returns one metric for one company for one fiscal year.""",
         "input_schema": {
             "type": "object", 
             "properties": {"company":{"type": "string", "description": "e.g. 'AAPL'"},
@@ -31,13 +34,19 @@ tools_schema = [
         "required": ["company", 'metric', 'period']},
     },
     {"name": "search_filings",
-            "description": "Searches the financial filings of the given cmpany and extract the exact information as required ",
-            "input_schema": {
-                "type": "object", 
-                "properties": {"company":{"type": "string", "description": "e.g. 'AAPL'"},
-            'question':{"type": "string", "description": "e.g. 'what is revenue of the AAPL for year 2024'"}},
-            "required": ["company", 'question']
-            }}
+            "description": """Searches the narrative text of a company's 10-K and returns relevant passages with 
+            section breadcrumbs. Use for qualitative questions strategy, reasoning, risks, management commentary. 
+            Do NOT use to obtain numeric figures; use get_financial_fact for those.""",
+            "input_schema": 
+            {"type": "object",
+            "properties": {
+                "company":  {"type": "string", "description": "Ticker, e.g. 'AAPL'"},
+                "question": {"type": "string", "description": "Qualitative question, e.g. 'why is the company increasing R&D investment'"},
+                "period":   {"type": "string", "description": "Fiscal year, e.g. 'FY2024'"},
+    },
+    "required": ["company", "question", "period"],
+},
+        }
 ]
 
 system = (
@@ -51,10 +60,6 @@ system = (
 def calculator(expression):
     return eval(str(expression))
 
-
-def search_filings(company, question):
-    # STUB — later your RAG retriever
-    return f"[stub narrative for {company}: {question}]"
 
 
 TOOLS = {
@@ -97,7 +102,9 @@ def context_size(messages):
     return sum(len(str(m)) for m in messages) 
 
 
-task = """Compare Apple's and Microsoft's R&D as a percentage of revenue for FY2023 and FY2024. Which company's ratio grew faster?"""
+task = """Compare Apple's and Microsoft's R&D as a percentage of revenue for FY2023 and FY2024. 
+Which company's ratio grew faster? Then summarize each company's stated strategic reasoning for its R&D investment, 
+citing the filing sections."""
 plan = make_plan(task)
 
 print("📋 PLAN:\n" + plan + "\n")
