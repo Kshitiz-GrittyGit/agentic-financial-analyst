@@ -9,7 +9,14 @@ import time
 from search import search_filings
 load_dotenv()  # reads .env into os.environ
 
-client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
+
+client = Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    timeout=120.0,
+    max_retries=2,
+)
 
 
 tools_schema = [
@@ -102,27 +109,22 @@ def context_size(messages):
     return sum(len(str(m)) for m in messages) 
 
 
-task = """Compare Apple's and Microsoft's R&D as a percentage of revenue for FY2023 and FY2024. 
-Which company's ratio grew faster? Then summarize each company's stated strategic reasoning for its R&D investment, 
-citing the filing sections."""
-plan = make_plan(task)
-
-print("📋 PLAN:\n" + plan + "\n")
-
-messages=[{"role": "user", "content": f"Task: {task}\n\nHere is your plan:\n{plan}\n\nNow execute it step by step using your tools."}]
 
 
-def multiturn_chat(tools,system,messages, model="claude-haiku-4-5", max_tokens=1500):
-    
-    counter = 20
-    while counter>0:
+def multiturn_chat(tools_schema,system,messages, model="claude-haiku-4-5", max_tokens = 3000):
+    tool_calls = []
+    final_text = ""
+    turns = 0
+
+    while True:
+        turns += 1
         resp = client.messages.create(
-                model=model,   # cheap for drills; swap if you like
-                max_tokens=max_tokens,
-                messages=messages,
-                tools=tools,
-                system=system
-                )
+                        model=model,   # cheap for drills; swap if you like
+                        max_tokens=max_tokens,
+                        messages=messages,
+                        tools=tools_schema,
+                        system=system
+                        )
         agent_response = resp.content
         messages.append({"role": "assistant", "content": agent_response})
 
@@ -133,36 +135,60 @@ def multiturn_chat(tools,system,messages, model="claude-haiku-4-5", max_tokens=1
                     print(f"  🧠 THOUGHT: {block.text}")
                 elif block.type == "tool_use":
                     print(f"  🔧 ACTION: {block.name}({block.input})")
-                
                     func = TOOLS.get(block.name)
                     if func is None:
                         result, ok = f"Error: unknown tool '{block.name}'", False
                     else:
                         result, ok = run_tool_with_retry(func, block.input)
 
+                    tool_calls.append({
+                        "name": block.name,
+                        "args": dict(block.input),
+                        "result": result,
+                        "ok": ok,
+                    })
+
                     marker = "👁️ " if ok else "❌"
                     print(f"  {marker} OBSERVATION: {result}")
-            
-            
+
                     tool_result.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": str(result)
-                        })
-            
-            messages.append({"role": "user", "content": tool_result}) 
+                        "content": result,
+                    })
+
+            messages.append({"role": "user", "content": tool_result})
             print(f"  📏 context: {context_size(messages)} chars, {len(messages)} messages")
+            continue
+            
+            messages.append({"role": "user", "content": tool_result})
+            print(f"  📏 context: {context_size(messages)} chars, {len(messages)} messages")
+            continue
 
         else:
-            final = next(b.text for b in resp.content if b.type == "text")
-            print("FINAL:", final)
-            break
-        
-        counter-=1
-    return messages
+            final_text = "".join(b.text for b in agent_response if b.type == "text")
+            print(f"FINAL: {final_text}")
+            return {
+                "final_answer": final_text,
+                "tool_calls": tool_calls,
+                "turns": turns,
+                "messages": messages,
+            }
+
+def run_agent(query):
+    plan = make_plan(query)
+    print(f"📋 PLAN:\n{plan}\n")
+    messages = [{
+        "role": "user",
+        "content": f"Task: {query}\n\nHere is your plan:\n{plan}\n\nNow execute it step by step using your tools."
+    }]
+    return multiturn_chat(tools_schema, system, messages)
 
 
-# inside your loop, after appending:
-print(f"  📏 context: {context_size(messages)} chars, {len(messages)} messages")
-
-msgs = multiturn_chat(tools_schema, system, messages)
+if __name__ == "__main__":
+    run_agent(
+        "Compare Apple's and Microsoft's R&D as a percentage of revenue for "
+        "FY2023 and FY2024. Which company's ratio grew faster? Then summarize "
+        "each company's stated strategic reasoning for its R&D investment, "
+        "citing the filing sections."
+    )

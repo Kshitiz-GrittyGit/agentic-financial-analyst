@@ -10,3 +10,5 @@ sec_ticker.json
 sla_registry.json
 qdrant_storage/
 *.pdf
+eval/results/*.jsonl
+!eval/results/20260825T1000.jsonl
